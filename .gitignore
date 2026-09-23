@@ -13,5 +13,5 @@ certs/
 *.log
 artifacts/
 coverage/
-release/
+/release/
 *.tgz
