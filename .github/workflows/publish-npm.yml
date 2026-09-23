@@ -13,17 +13,17 @@ jobs:
     if: contains(github.event.head_commit.message, '[publish npm]')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-      - name: Use current npm CLI
-        run: npm install --global npm@latest
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Test
         run: npm test -- --maxWorkers=2
+      - name: Use current npm CLI for publishing
+        run: npm install --global npm@latest
       - name: Check registry
         id: package
         shell: bash
