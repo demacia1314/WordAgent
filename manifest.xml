@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xsi:type="TaskPaneApp">
+  <Id>7ecf7e74-194f-45cd-8f95-2d95b911e7ba</Id>
+  <Version>2.1.1.0</Version>
+  <ProviderName>WordAgent</ProviderName>
+  <DefaultLocale>zh-CN</DefaultLocale>
+  <DisplayName DefaultValue="WordAgent"/>
+  <Description DefaultValue="通过 AI 对话编辑当前 Word 文档，支持实时修改、变更审阅与撤回。"/>
+  <IconUrl DefaultValue="https://localhost:3001/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3001/assets/icon-80.png"/>
+  <SupportUrl DefaultValue="https://localhost:3001/"/>
+  <AppDomains><AppDomain>https://localhost:3001</AppDomain></AppDomains>
+  <Hosts><Host Name="Document"/></Hosts>
+  <Requirements><Sets DefaultMinVersion="1.3"><Set Name="WordApi" MinVersion="1.3"/></Sets></Requirements>
+  <DefaultSettings><SourceLocation DefaultValue="https://localhost:3001/taskpane.html"/></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts><Host xsi:type="Document"><DesktopFormFactor>
+      <GetStarted><Title resid="Welcome.Title"/><Description resid="Welcome.Description"/><LearnMoreUrl resid="Support.Url"/></GetStarted>
+      <FunctionFile resid="Commands.Url"/>
+      <ExtensionPoint xsi:type="PrimaryCommandSurface"><OfficeTab id="TabHome"><Group id="WordAgent.Group"><Label resid="Group.Label"/>
+        <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+        <Control xsi:type="Button" id="WordAgent.Open"><Label resid="Button.Label"/><Supertip><Title resid="Button.Label"/><Description resid="Button.Tooltip"/></Supertip>
+          <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+          <Action xsi:type="ShowTaskpane"><TaskpaneId>WordAgent.Taskpane</TaskpaneId><SourceLocation resid="Taskpane.Url"/></Action>
+        </Control>
+      </Group></OfficeTab></ExtensionPoint>
+    </DesktopFormFactor></Host></Hosts>
+    <Resources>
+      <bt:Images><bt:Image id="Icon.16" DefaultValue="https://localhost:3001/assets/icon-16.png"/><bt:Image id="Icon.32" DefaultValue="https://localhost:3001/assets/icon-32.png"/><bt:Image id="Icon.80" DefaultValue="https://localhost:3001/assets/icon-80.png"/></bt:Images>
+      <bt:Urls><bt:Url id="Support.Url" DefaultValue="https://localhost:3001/"/><bt:Url id="Commands.Url" DefaultValue="https://localhost:3001/commands.html"/><bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3001/taskpane.html"/></bt:Urls>
+      <bt:ShortStrings><bt:String id="Welcome.Title" DefaultValue="WordAgent 文档助手"/><bt:String id="Group.Label" DefaultValue="WordAgent"/><bt:String id="Button.Label" DefaultValue="打开 AI 助手"/></bt:ShortStrings>
+      <bt:LongStrings><bt:String id="Welcome.Description" DefaultValue="与 AI 对话，在当前文档中完成修改与审阅。"/><bt:String id="Button.Tooltip" DefaultValue="打开 WordAgent 侧边栏"/></bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

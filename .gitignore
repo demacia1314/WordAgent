@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-server/
+.local/
+certs/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.log
+artifacts/
+coverage/
+release/
+*.tgz
