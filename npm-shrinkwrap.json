@@ -1,12 +1,12 @@
 {
   "name": "@demacia1314/wordagent",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@demacia1314/wordagent",
-      "version": "2.1.1",
+      "version": "2.2.0",
       "license": "UNLICENSED",
       "dependencies": {
         "@tiptap/extension-table": "^3.0.0",

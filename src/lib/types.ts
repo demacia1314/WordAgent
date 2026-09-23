@@ -1,4 +1,4 @@
-import type { EditPlan, Snapshot } from '../../shared/contracts';
+import type { EditPlan, Snapshot, ToolActivity } from '../../shared/contracts';
 export type ChangeStatus =
   'pending' | 'applying' | 'applied' | 'rejected' | 'reverted' | 'conflict';
 export type Change = {
@@ -15,6 +15,7 @@ export type Message = {
   content: string;
   created: number;
   change?: Change;
+  tools?: ToolActivity[];
   error?: string;
   interrupted?: boolean;
 };

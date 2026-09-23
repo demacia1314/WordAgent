@@ -203,6 +203,145 @@ describe('real ProseMirror document adapter', () => {
       ),
     ).rejects.toThrow();
   });
+  it('replaces only a selected occurrence while preserving surrounding rich text and rollback', async () => {
+    editor.commands.setContent(
+      '<p><strong>Keep</strong> old <em>old</em> <a href="https://example.com">link</a></p>',
+    );
+    const base = await adapter.snapshot();
+    const checkpoint = await adapter.apply(
+      {
+        summary: '局部',
+        operations: [
+          {
+            type: 'replace_text',
+            paragraphId: 'p0',
+            expectedText: base.paragraphs[0].text,
+            find: 'old',
+            text: 'new longer',
+            expectedMatches: 2,
+            occurrence: 2,
+          },
+        ],
+      },
+      base,
+    );
+    expect(editor.getText()).toBe('Keep old new longer link');
+    expect(editor.getHTML()).toContain('<strong>Keep</strong>');
+    expect(editor.getHTML()).toContain('<em>new longer</em>');
+    expect(editor.getHTML()).toContain('href="https://example.com"');
+    await adapter.undo(checkpoint);
+    expect((await adapter.snapshot()).revision).toBe(base.revision);
+  });
+  it('replaces all literal occurrences bottom to top without rematching inserted text', async () => {
+    editor.commands.setContent('<p>旧 旧 旧</p>');
+    const base = await adapter.snapshot();
+    await adapter.apply(
+      {
+        summary: '全部',
+        operations: [
+          {
+            type: 'replace_text',
+            paragraphId: 'p0',
+            expectedText: '旧 旧 旧',
+            find: '旧',
+            text: '旧的新名',
+            expectedMatches: 3,
+          },
+        ],
+      },
+      base,
+    );
+    expect(editor.getText()).toBe('旧的新名 旧的新名 旧的新名');
+  });
+  it('rejects incorrect replacement counts without dispatching any edits', async () => {
+    const base = await adapter.snapshot();
+    await expect(
+      adapter.apply(
+        {
+          summary: '错误数量',
+          operations: [
+            {
+              type: 'replace_text',
+              paragraphId: 'p1',
+              expectedText: '第一段原文',
+              find: '原文',
+              text: '新',
+              expectedMatches: 2,
+            },
+          ],
+        },
+        base,
+      ),
+    ).rejects.toThrow('数量');
+    expect((await adapter.snapshot()).revision).toBe(base.revision);
+  });
+  it('merges font attributes rather than erasing size or color', async () => {
+    editor.commands.setContent(
+      '<p><span style="color: red; font-size: 14pt; font-family: Arial">A</span><span style="color: blue; font-size: 16pt">B</span></p>',
+    );
+    const base = await adapter.snapshot();
+    await adapter.apply(
+      {
+        summary: '字体',
+        operations: [
+          {
+            type: 'format',
+            paragraphId: 'p0',
+            expectedText: 'AB',
+            fontFamily: 'Georgia',
+            fontSize: 20,
+          },
+        ],
+      },
+      base,
+    );
+    const texts = editor.getJSON().content![0].content!;
+    for (const text of texts)
+      expect(text.marks?.find((m) => m.type === 'textStyle')?.attrs).toMatchObject({
+        fontFamily: 'Georgia',
+        fontSize: '20pt',
+      });
+    expect(texts[0].marks?.find((m) => m.type === 'textStyle')?.attrs?.color).not.toBe(
+      texts[1].marks?.find((m) => m.type === 'textStyle')?.attrs?.color,
+    );
+  });
+  it('rejects stale rich formatting even when plain snapshot fields and selection are unchanged', async () => {
+    const base = await adapter.snapshot();
+    editor.view.dispatch(editor.state.tr.addMark(1, 3, editor.schema.marks.bold.create()));
+    expect((await adapter.snapshot()).paragraphs).toEqual(base.paragraphs);
+    await expect(
+      adapter.apply(
+        {
+          summary: '旧方案',
+          operations: [{ type: 'delete', paragraphId: 'p1', expectedText: '第一段原文' }],
+        },
+        base,
+      ),
+    ).rejects.toThrow('发生了变化');
+  });
+  it('protects hard-break paragraphs from plain-offset replacements', async () => {
+    editor.commands.setContent('<p>old<br>name</p>');
+    const base = await adapter.snapshot();
+    expect(base.paragraphs[0].editable).toBe(false);
+    await expect(
+      adapter.apply(
+        {
+          summary: '跨换行',
+          operations: [
+            {
+              type: 'replace_text',
+              paragraphId: 'p0',
+              expectedText: 'oldname',
+              find: 'oldname',
+              text: 'new',
+              expectedMatches: 1,
+            },
+          ],
+        },
+        base,
+      ),
+    ).rejects.toThrow('复杂结构');
+  });
   it('preserves a valid empty document after deleting all paragraphs', async () => {
     const base = await adapter.snapshot();
     await adapter.apply(

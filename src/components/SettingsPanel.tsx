@@ -10,6 +10,7 @@ import {
   Save,
   ShieldCheck,
   Trash2,
+  Wrench,
 } from 'lucide-react';
 import { api, type PublicSettings } from '../lib/api';
 import type { PublicProfile } from '../../shared/contracts';
@@ -252,6 +253,21 @@ export function SettingsPanel({
                 <PlugZap size={15} />
               </IconButton>
               <IconButton
+                label={`测试 Agent 工具 ${profile.name}`}
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const result = await api<{ latency: number; agentTools: boolean }>(
+                      `/settings/profiles/${profile.id}/test?agent=1`,
+                      { method: 'POST' },
+                    );
+                    setStatus(`Agent 工具正常 · ${result.latency} ms · 未发送文档`);
+                  })
+                }
+              >
+                <Wrench size={15} />
+              </IconButton>
+              <IconButton
                 label={`设为默认 ${profile.name}`}
                 disabled={busy || profile.id === settings.defaultProfile}
                 onClick={() =>
@@ -358,7 +374,7 @@ export function SettingsPanel({
         </div>
       </div>
       <div className="version-label">
-        WordAgent <span>2.1.1</span>
+        WordAgent <span>2.2.0</span>
       </div>
     </div>
   );

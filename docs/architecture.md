@@ -15,8 +15,8 @@ Model profiles are loaded from an ignored local JSON file, updated via atomic re
 3. The client submits a bounded conversation and either document or selection context. Selection-only requests do not send unselected paragraphs.
 4. The server sends a system instruction, conversation, untrusted document snapshot, and latest user request to a Chat Completions-compatible endpoint.
 5. Public text streams over SSE. Provider reasoning fields and optional `<think>` envelopes are not displayed. Keepalive comments prevent idle intermediary timeouts; disconnect cancels the upstream fetch.
-6. A single complete `edit_document` function call becomes an `EditPlan`. Schema, target, original text, scope, batch size, and table shape are validated before emitting a proposal. Truncation, unknown tools, or malformed output never produces a proposal.
-7. In review mode the user applies or rejects a batch. In live mode a completed batch is applied automatically. A proposal is not a success receipt.
+6. Agent document mode allows up to four sequential read-only `inspect_document` / `search_document` calls, with correlated assistant/tool messages, then a final answer or one `edit_document` / `replace_in_document` proposal. One 180-second deadline and bounded output/result sizes cover the turn. Schema, exact text, scope, counts and shape are checked before any proposal. Ask advertises no tools; selection mode exposes only a selection-edit schema. Tool availability is enforced again server-side. Truncated, malformed, unknown or over-budget calls cannot produce a proposal.
+7. The user can choose review or live mode (live remains the default). Local toolbox replacements always stage a pending preview without contacting a model. Read-only tool completion is displayed separately from edit application. A proposal is not a success receipt.
 8. The adapter validates document identity and revision again. ProseMirror applies one transaction; Word queues bottom-to-top paragraph operations and synchronizes through Office.js.
 9. Only a successful adapter response marks a batch applied. Revision-guarded checkpoints enable rollback during the current open session.
 
@@ -24,9 +24,11 @@ Model profiles are loaded from an ignored local JSON file, updated via atomic re
 
 `replace`, `insert`, `delete`, `format`, and `table` require `paragraphId` and exact `expectedText`. Paragraph IDs are snapshot-relative indices, not permanent document IDs. The full revision guard prevents index drift from applying stale edits. Multiple operations on the same paragraph in a batch are rejected. Table cells and nested browser paragraphs are protected from paragraph-wide operations.
 
+`replace_text` adds count-guarded, case-sensitive literal substring replacement, optionally for one 1-based occurrence. The compiler requires a total count, refuses protected matches rather than skipping them, and caps batches at 60 paragraphs and 1,000 replacements. Browser replacements use original UTF-16 offsets in one bottom-to-top transaction; paragraphs with inline non-text nodes are protected. Replacement text inherits the first matched text run's marks, while surrounding runs remain untouched. Word preloads all search ranges with explicit literal options, escapes caret codes, checks exact counts/text and body revision, then queues writes. No sync is performed per occurrence. Word host behavior still requires native acceptance.
+
 `replace_selection` is the only operation permitted for selection scope. Browser selections use immutable captured ProseMirror positions and a document fingerprint. Word selections use an explicitly tracked original Range. Reloaded Word selection proposals are rejected because their original Range no longer exists.
 
-Revisions fingerprint complete browser JSON or Word body OOXML, not only plain text. Styling changes therefore invalidate stale proposals. Fingerprints detect ordinary editing conflicts; they are not cryptographic authentication.
+Revisions strictly fingerprint complete browser JSON or Word body OOXML, not only plain text. The former paragraph-equality fallback is removed: formatting or OOXML-only changes invalidate stale proposals even when snapshot text fields are equal. This can conservatively reject nonsemantic host OOXML changes; regeneration is safer than bypassing the guard. Fingerprints detect ordinary editing conflicts; they are not cryptographic authentication.
 
 ## Recovery Semantics
 

@@ -1,4 +1,4 @@
-# WordAgent 2.1 Windows 试用包
+# WordAgent 2.2 Windows 试用包
 
 ## 安装
 

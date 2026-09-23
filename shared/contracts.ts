@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  literalTextSchema,
+  replacementTextSchema,
+  replacedText,
+  replacementOffsets,
+} from './text-edits';
 
 export const styleSchema = z.enum(['Normal', 'Title', 'Heading1', 'Heading2', 'Heading3', 'Quote']);
 export type ParagraphStyle = z.infer<typeof styleSchema>;
@@ -6,6 +12,16 @@ const text = z.string().max(30000);
 const target = { paragraphId: z.string().regex(/^p\d+$/), expectedText: text };
 export const operationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('replace'), ...target, text }).strict(),
+  z
+    .object({
+      type: z.literal('replace_text'),
+      ...target,
+      find: literalTextSchema,
+      text: replacementTextSchema,
+      expectedMatches: z.number().int().min(1).max(1000),
+      occurrence: z.number().int().min(1).max(1000).optional(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('insert'),
@@ -113,8 +129,15 @@ export const profileSchema = z
   .strict();
 export type Profile = z.infer<typeof profileSchema>;
 export type PublicProfile = Omit<Profile, 'apiKey'> & { hasKey: boolean; warning?: string };
+export type ToolActivity = {
+  id: string;
+  name: string;
+  label: string;
+  status: 'running' | 'completed';
+};
 export type StreamEvent =
   | { type: 'status'; message: string }
+  | { type: 'tool'; activity: ToolActivity }
   | { type: 'delta'; text: string }
   | { type: 'proposal'; plan: EditPlan }
   | { type: 'error'; message: string }
@@ -134,6 +157,7 @@ export function validatePlan(
 ): void {
   planSchema.parse(plan);
   const targets = new Set<string>();
+  let replacements = 0;
   for (const op of plan.operations) {
     if (scope === 'selection' && op.type !== 'replace_selection')
       throw new Error('选区模式只允许修改选中的文字');
@@ -152,6 +176,11 @@ export function validatePlan(
     if (!para.editable) throw new Error('此段落位于复杂结构中，请在 Word 中直接编辑');
     if (targets.has(op.paragraphId)) throw new Error('同一批次不能重复修改同一段落');
     targets.add(op.paragraphId);
+    if (op.type === 'replace_text') {
+      replacements += replacementOffsets(op).length;
+      if (replacements > 1000) throw new Error('单批替换不能超过 1000 处，请缩小范围');
+      if (replacedText(op).length > 30000) throw new Error('替换后的段落过长，请拆分处理');
+    }
     if (op.type === 'table' && op.rows.some((row) => row.length !== op.rows[0].length))
       throw new Error('表格每行的列数必须一致');
     if (op.type === 'format' && Object.keys(op).length <= 3) throw new Error('缺少格式设置');

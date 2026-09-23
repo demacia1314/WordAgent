@@ -29,7 +29,7 @@ export function createApp() {
     next();
   });
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, version: '2.1.1', instance: process.env.WORDAGENT_INSTANCE });
+    res.json({ ok: true, version: '2.2.0', instance: process.env.WORDAGENT_INSTANCE });
   });
   app.post(
     '/api/documents/import',
@@ -106,26 +106,75 @@ export function createApp() {
   });
   app.post('/api/settings/profiles/:id/test', async (req, res) => {
     const profile = await resolveProfile(String(req.params.id));
+    const agentProbe = req.query.agent === '1';
     const start = Date.now();
     try {
+      const probeName = 'wordagent_capability_probe';
       const response = await fetch(upstreamUrl(profile), {
         method: 'POST',
         headers: headers(profile),
         signal: AbortSignal.timeout(25000),
         body: JSON.stringify({
           model: profile.model,
-          messages: [{ role: 'user', content: 'Reply with OK.' }],
-          max_tokens: 32,
+          messages: [
+            {
+              role: 'user',
+              content: agentProbe
+                ? 'Call the provided capability probe tool exactly once with no arguments.'
+                : 'Reply with OK.',
+            },
+          ],
+          max_tokens: agentProbe ? 128 : 32,
           stream: false,
+          ...(agentProbe
+            ? {
+                tools: [
+                  {
+                    type: 'function',
+                    function: {
+                      name: probeName,
+                      description: 'No-op probe used only to verify function tool calling support.',
+                      parameters: { type: 'object', additionalProperties: false, properties: {} },
+                    },
+                  },
+                ],
+                tool_choice: { type: 'function', function: { name: probeName } },
+                parallel_tool_calls: false,
+              }
+            : {}),
         }),
       });
       if (!response.ok) {
         await response.body?.cancel();
-        throw new Error(upstreamError(response.status));
+        throw new Error(
+          agentProbe
+            ? `Agent 工具测试失败：${upstreamError(response.status)}`
+            : upstreamError(response.status),
+        );
       }
-      const payload = (await response.json()) as { choices?: unknown[] };
+      const payload = (await response.json()) as {
+        choices?: Array<{
+          message?: { tool_calls?: Array<{ function?: { name?: string; arguments?: string } }> };
+        }>;
+      };
       if (!payload.choices?.length) throw new Error('接口返回了无效的 Chat Completions 响应');
-      res.json({ ok: true, latency: Date.now() - start });
+      if (agentProbe) {
+        const calls = payload.choices[0]?.message?.tool_calls;
+        if (calls?.length !== 1 || calls[0]?.function?.name !== probeName)
+          throw new Error('模型没有返回所要求的函数工具调用；Ask 可用，但 Agent 编辑可能不可用');
+        try {
+          const args = JSON.parse(calls[0].function?.arguments || '{}');
+          if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length)
+            throw new Error();
+        } catch {
+          throw new Error('模型返回的函数工具参数无效；Agent 编辑可能不可用');
+        }
+      }
+      res.json({
+        ok: true,
+        latency: Date.now() - start,
+        ...(agentProbe ? { agentTools: true } : {}),
+      });
     } catch (error) {
       res.status(502).json({
         error:

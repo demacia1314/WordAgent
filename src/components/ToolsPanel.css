@@ -1,0 +1,118 @@
+.tools-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tools-panel .section-label {
+  margin: 0;
+}
+.tool-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+.tool-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.tool-search {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.tool-search > input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px;
+  background: var(--bg);
+}
+.tool-search label {
+  font-size: 12px;
+  color: var(--secondary);
+}
+.tool-search .search-field {
+  margin: 0;
+}
+.tool-hit {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  width: 100%;
+  gap: 5px;
+  padding: 10px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
+.tool-hit:hover {
+  background: var(--hover);
+}
+.tool-hit small {
+  color: var(--secondary);
+}
+.tool-hit span {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.tool-pages {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.tool-recipes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tool-recipes > button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.tool-recipes > button:hover {
+  background: var(--hover);
+}
+.tool-recipes > button > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tool-recipes small {
+  color: var(--secondary);
+  font-size: 11px;
+}
+.tool-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.tool-activity > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.tool-activity small {
+  margin-left: auto;
+  white-space: nowrap;
+}

@@ -1,3 +1,4 @@
+import { replacementOffsets } from '../../shared/text-edits';
 import type { Editor, JSONContent } from '@tiptap/react';
 import type { Node as ProseNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
@@ -47,6 +48,10 @@ export class BrowserAdapter implements DocumentAdapter {
     const entries: { paragraph: Paragraph; pos: number; node: ProseNode }[] = [];
     this.editor.state.doc.descendants((node, pos, parent) => {
       if (!node.isTextblock) return;
+      let plainInline = true;
+      node.forEach((child) => {
+        if (!child.isText) plainInline = false;
+      });
       entries.push({
         paragraph: {
           id: `p${entries.length}`,
@@ -54,9 +59,9 @@ export class BrowserAdapter implements DocumentAdapter {
           style: node.type.name === 'heading' ? `Heading${node.attrs.level}` : 'Normal',
           alignment: node.attrs.textAlign || 'left',
           fontFamily:
-            node.firstChild?.marks.find((mark) => mark.type.name === 'textStyle')?.attrs.fontFamily ||
-            null,
-          editable: parent?.type.name === 'doc',
+            node.firstChild?.marks.find((mark) => mark.type.name === 'textStyle')?.attrs
+              .fontFamily || null,
+          editable: parent?.type.name === 'doc' && plainInline,
         },
         pos,
         node,
@@ -77,13 +82,7 @@ export class BrowserAdapter implements DocumentAdapter {
   }
   async apply(plan: EditPlan, base: Snapshot): Promise<Checkpoint> {
     const current = await this.snapshot();
-    const sameParagraphState =
-      JSON.stringify(current.paragraphs) === JSON.stringify(base.paragraphs) &&
-      current.selection === base.selection;
-    if (
-      current.documentId !== base.documentId ||
-      (current.revision !== base.revision && !sameParagraphState)
-    )
+    if (current.documentId !== base.documentId || current.revision !== base.revision)
       throw new Error(CONFLICT);
     validatePlan(plan, base);
     const before = this.editor.getJSON();
@@ -110,6 +109,17 @@ export class BrowserAdapter implements DocumentAdapter {
       }
       const entry = entries.find((e) => e.paragraph.id === op.paragraphId)!;
       const { pos, node } = entry;
+      if (op.type === 'replace_text') {
+        // Bottom-to-top replacements keep snapshot offsets valid and leave all
+        // surrounding rich-text runs untouched. New text inherits its first run.
+        for (const offset of replacementOffsets(op).reverse()) {
+          const from = pos + 1 + offset;
+          const to = from + op.find.length;
+          if (tr.doc.textBetween(from, to) !== op.find) throw new Error(CONFLICT);
+          if (op.text) tr.replaceWith(from, to, schema.text(op.text, node.nodeAt(offset)?.marks));
+          else tr.delete(from, to);
+        }
+      }
       if (op.type === 'delete') tr.delete(pos, pos + node.nodeSize);
       if (op.type === 'replace') {
         if (!op.text.includes('\n')) {
@@ -165,18 +175,22 @@ export class BrowserAdapter implements DocumentAdapter {
           if (op[type] === false)
             tr.removeMark(pos + 1, pos + node.nodeSize - 1, schema.marks[type]);
         }
-        if (op.fontSize)
-          tr.addMark(
-            pos + 1,
-            pos + node.nodeSize - 1,
-            schema.marks.textStyle.create({ fontSize: `${op.fontSize}pt` }),
-          );
-        if (op.fontFamily)
-          tr.addMark(
-            pos + 1,
-            pos + node.nodeSize - 1,
-            schema.marks.textStyle.create({ fontFamily: op.fontFamily }),
-          );
+        if (op.fontSize || op.fontFamily) {
+          // Merge per text run: setting a font must not erase its size or color.
+          tr.doc.nodesBetween(pos + 1, pos + node.nodeSize - 1, (child, childPos) => {
+            if (!child.isText) return;
+            const existing = child.marks.find((mark) => mark.type === schema.marks.textStyle);
+            tr.addMark(
+              childPos,
+              childPos + child.nodeSize,
+              schema.marks.textStyle.create({
+                ...existing?.attrs,
+                ...(op.fontSize ? { fontSize: `${op.fontSize}pt` } : {}),
+                ...(op.fontFamily ? { fontFamily: op.fontFamily } : {}),
+              }),
+            );
+          });
+        }
       }
     }
     if (!tr.doc.childCount) tr.insert(0, schema.nodes.paragraph.create());

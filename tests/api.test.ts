@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -18,6 +18,7 @@ afterAll(async () => {
   delete process.env.WORDAGENT_DATA_DIR;
   await fs.rm(temp, { recursive: true, force: true });
 });
+afterEach(() => vi.unstubAllGlobals());
 describe('local API and DOCX round trip', () => {
   it('requires an explicit same-site client header', async () => {
     expect((await request(app).get('/api/settings').set('Host', 'localhost')).status).toBe(403);
@@ -34,7 +35,7 @@ describe('local API and DOCX round trip', () => {
   it('returns a health check and handles missing profiles', async () => {
     expect((await request(app).get('/api/health').set(headers)).body).toMatchObject({
       ok: true,
-      version: '2.1.1',
+      version: '2.2.0',
     });
     expect((await request(app).get('/api/settings').set(headers)).body.profiles).toEqual([]);
   });
@@ -64,6 +65,80 @@ describe('local API and DOCX round trip', () => {
         .status,
     ).toBe(400);
     expect((await request(app).post('/api/chat').set(headers).send({})).status).toBe(400);
+  });
+  it('tests plain connectivity without tools and Agent capability with a no-document function probe', async () => {
+    const config = {
+      name: 'Probe',
+      baseUrl: 'http://localhost:11434/v1',
+      model: 'probe',
+      apiKey: 'SECRET_VALUE',
+    };
+    await request(app).put('/api/settings/profiles/probe').set(headers).send(config);
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  tool_calls: [
+                    {
+                      id: 'call_1',
+                      type: 'function',
+                      function: { name: 'wordagent_capability_probe', arguments: '{}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetcher);
+    const plain = await request(app).post('/api/settings/profiles/probe/test').set(headers);
+    expect(plain.status).toBe(200);
+    expect(JSON.parse(fetcher.mock.calls[0][1].body).tools).toBeUndefined();
+    const agent = await request(app).post('/api/settings/profiles/probe/test?agent=1').set(headers);
+    expect(agent.status).toBe(200);
+    expect(agent.body.agentTools).toBe(true);
+    const body = JSON.parse(fetcher.mock.calls[1][1].body);
+    expect(body.messages[0].content).not.toContain('document');
+    expect(body.tools[0].function.name).toBe('wordagent_capability_probe');
+    expect(body.tool_choice.function.name).toBe('wordagent_capability_probe');
+    expect(body.parallel_tool_calls).toBe(false);
+  });
+  it('reports a clear Agent capability failure without exposing upstream bodies', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: 'no tool' } }] }), {
+          status: 200,
+        }),
+      ),
+    );
+    const response = await request(app)
+      .post('/api/settings/profiles/probe/test?agent=1')
+      .set(headers);
+    expect(response.status).toBe(502);
+    expect(response.body.error).toContain('Agent 编辑可能不可用');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(new Response('secret upstream error', { status: 400 })),
+    );
+    const rejected = await request(app)
+      .post('/api/settings/profiles/probe/test?agent=1')
+      .set(headers);
+    expect(rejected.status).toBe(502);
+    expect(rejected.body.error).toContain('Agent 工具测试失败');
+    expect(JSON.stringify(rejected.body)).not.toContain('secret upstream error');
+    await request(app).delete('/api/settings/profiles/probe').set(headers);
   });
   it('deletes credentials and adjusts the default', async () => {
     await request(app).delete('/api/settings/profiles/local').set(headers);

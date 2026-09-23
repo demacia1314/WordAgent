@@ -1,11 +1,24 @@
 {
   "name": "@demacia1314/wordagent",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Local AI editing sidebar for Microsoft Word with live document updates.",
   "license": "UNLICENSED",
-  "bin": { "wordagent": "bin/wordagent.mjs" },
-  "files": ["bin/", "dist/", "dist-server/", "manifest.xml", "docs/distribution.md", "npm-shrinkwrap.json"],
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "bin": {
+    "wordagent": "bin/wordagent.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "dist-server/",
+    "manifest.xml",
+    "docs/distribution.md",
+    "docs/document-tools.md",
+    "npm-shrinkwrap.json"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

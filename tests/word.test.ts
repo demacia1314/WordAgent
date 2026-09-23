@@ -1,17 +1,25 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { literalOffsets } from '../shared/text-edits';
 import { WordAdapter } from '../src/document/word';
 
 function officeFixture() {
   let items: MockParagraph[] = [];
   let selectionIndex = 0;
+  let badSearch = false;
+  let packageSuffix = '';
+  const searches: { query: string; options: unknown }[] = [];
   const actions: (() => void)[] = [];
   const queue = (fn: () => void) => actions.push(fn);
   class MockRange {
     text = '';
     tracked = false;
-    constructor(public paragraph: MockParagraph) {}
+    constructor(
+      public paragraph: MockParagraph,
+      public from = 0,
+      public to?: number,
+    ) {}
     load() {
-      this.text = this.paragraph.text;
+      this.text = this.paragraph.text.slice(this.from, this.to);
       return this;
     }
     track() {
@@ -24,7 +32,10 @@ function officeFixture() {
     }
     insertText(text: string) {
       queue(() => {
-        this.paragraph.text = text;
+        this.paragraph.text =
+          this.to === undefined
+            ? text
+            : this.paragraph.text.slice(0, this.from) + text + this.paragraph.text.slice(this.to);
       });
     }
     clear() {
@@ -41,6 +52,25 @@ function officeFixture() {
     constructor(public text: string) {}
     getRange() {
       return new MockRange(this);
+    }
+    search(query: string, options: unknown) {
+      searches.push({ query, options });
+      const collection = {
+        items: [] as MockRange[],
+        load: () => {
+          queue(() => {
+            const find = query.replace(/\^\^/g, '^');
+            collection.items = badSearch
+              ? []
+              : literalOffsets(this.text, find).map((from) => {
+                  const range = new MockRange(this, from, from + find.length);
+                  range.load();
+                  return range;
+                });
+          });
+        },
+      };
+      return collection;
     }
     delete() {
       queue(() => {
@@ -79,7 +109,7 @@ function officeFixture() {
     getOoxml() {
       const result = { value: '' };
       queue(() => {
-        result.value = serialize();
+        result.value = serialize() + packageSuffix;
       });
       return result;
     },
@@ -116,6 +146,13 @@ function officeFixture() {
   });
   return {
     items: () => items,
+    searches,
+    mismatch: () => {
+      badSearch = true;
+    },
+    changePackage: () => {
+      packageSuffix = ' ';
+    },
     select: (index: number) => {
       selectionIndex = index;
     },
@@ -203,6 +240,100 @@ describe('Word adapter contract with mocked Office host', () => {
       'B',
       '第三段',
     ]);
+  });
+  it('replaces exact Word ranges rather than the whole paragraph and supports undo', async () => {
+    fixture.items()[0].text = 'old ^p old';
+    const adapter = new WordAdapter();
+    const base = await adapter.capture();
+    const checkpoint = await adapter.apply(
+      {
+        summary: '短语',
+        operations: [
+          {
+            type: 'replace_text',
+            paragraphId: 'p0',
+            expectedText: 'old ^p old',
+            find: 'old',
+            text: 'new longer',
+            expectedMatches: 2,
+            occurrence: 2,
+          },
+        ],
+      },
+      base,
+    );
+    expect(fixture.items()[0].text).toBe('old ^p new longer');
+    expect(fixture.searches[0].options).toMatchObject({
+      matchWildcards: false,
+      matchCase: true,
+      ignorePunct: false,
+      ignoreSpace: false,
+    });
+    await adapter.undo(checkpoint);
+    expect(fixture.items()[0].text).toBe('old ^p old');
+  });
+  it('escapes caret codes and replaces all matches from bottom to top', async () => {
+    fixture.items()[0].text = '^p ^p';
+    const adapter = new WordAdapter();
+    const base = await adapter.capture();
+    await adapter.apply(
+      {
+        summary: '字面查找',
+        operations: [
+          {
+            type: 'replace_text',
+            paragraphId: 'p0',
+            expectedText: '^p ^p',
+            find: '^p',
+            text: 'X',
+            expectedMatches: 2,
+          },
+        ],
+      },
+      base,
+    );
+    expect(fixture.searches[0].query).toBe('^^p');
+    expect(fixture.items()[0].text).toBe('X X');
+  });
+  it('refuses the entire batch before writes if Word search disagrees', async () => {
+    const adapter = new WordAdapter();
+    const base = await adapter.capture();
+    fixture.mismatch();
+    await expect(
+      adapter.apply(
+        {
+          summary: '错误搜索',
+          operations: [
+            {
+              type: 'replace_text',
+              paragraphId: 'p0',
+              expectedText: '同名文字',
+              find: '同名',
+              text: '新',
+              expectedMatches: 1,
+            },
+            { type: 'delete', paragraphId: 'p2', expectedText: '第三段' },
+          ],
+        },
+        base,
+      ),
+    ).rejects.toThrow('匹配结果');
+    expect(fixture.items().map((p) => p.text)).toEqual(['同名文字', '同名文字', '第三段']);
+  });
+  it('rejects an OOXML-only change even when paragraph metadata is identical', async () => {
+    const adapter = new WordAdapter();
+    const base = await adapter.capture();
+    fixture.changePackage();
+    expect((await adapter.snapshot()).paragraphs).toEqual(base.paragraphs);
+    await expect(
+      adapter.apply(
+        {
+          summary: '旧方案',
+          operations: [{ type: 'delete', paragraphId: 'p2', expectedText: '第三段' }],
+        },
+        base,
+      ),
+    ).rejects.toThrow('发生了变化');
   });
   it('protects later formatting during Word rollback', async () => {
     const adapter = new WordAdapter();

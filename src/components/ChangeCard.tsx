@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { diffChars } from 'diff';
+import { replacedText } from '../../shared/text-edits';
 import type { Change } from '../lib/types';
 import type { Operation } from '../../shared/contracts';
 
@@ -23,6 +24,7 @@ const labels = {
 };
 const operationNames = {
   replace: '修改段落',
+  replace_text: '精确替换文字',
   insert: '插入段落',
   delete: '删除段落',
   format: '调整格式',
@@ -83,14 +85,15 @@ function OperationDiff({ op }: { op: Operation }) {
     );
   return (
     <div className="diff-text">
-      {diffChars(op.expectedText, op.text).map((part, i) =>
-        part.added ? (
-          <ins key={i}>{part.value}</ins>
-        ) : part.removed ? (
-          <del key={i}>{part.value}</del>
-        ) : (
-          <span key={i}>{part.value}</span>
-        ),
+      {diffChars(op.expectedText, op.type === 'replace_text' ? replacedText(op) : op.text).map(
+        (part, i) =>
+          part.added ? (
+            <ins key={i}>{part.value}</ins>
+          ) : part.removed ? (
+            <del key={i}>{part.value}</del>
+          ) : (
+            <span key={i}>{part.value}</span>
+          ),
       )}
     </div>
   );

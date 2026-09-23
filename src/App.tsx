@@ -34,6 +34,7 @@ import {
   TextCursorInput,
   Trash2,
   WandSparkles,
+  Wrench,
   X,
   Zap,
   PencilLine,
@@ -44,7 +45,8 @@ import type { Checkpoint, DocumentAdapter } from './document/adapter';
 import { api, streamChat, type PublicSettings } from './lib/api';
 import { download, readLocal, writeLocal } from './lib/storage';
 import { uid, type Change, type Message, type Session } from './lib/types';
-import type { Snapshot } from '../shared/contracts';
+import type { EditPlan, Snapshot } from '../shared/contracts';
+import { ToolsPanel } from './components/ToolsPanel';
 import { IconButton } from './components/IconButton';
 import { ChangeCard } from './components/ChangeCard';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -63,10 +65,11 @@ const emptySnapshot: Snapshot = {
 const navItems = [
   { id: 'chat', name: '对话', icon: MessageSquare },
   { id: 'outline', name: '文档大纲', icon: ListTree },
+  { id: 'tools', name: '文档工具', icon: Wrench },
   { id: 'changes', name: '变更记录', icon: GitCompareArrows },
   { id: 'history', name: '历史会话', icon: History },
 ] as const;
-type Panel = 'chat' | 'outline' | 'changes' | 'history' | 'settings';
+type Panel = 'chat' | 'outline' | 'tools' | 'changes' | 'history' | 'settings';
 type Modal =
   | { kind: 'newDocument' }
   | { kind: 'deleteSession'; id: string }
@@ -116,7 +119,7 @@ export default function App({ host }: { host: 'browser' | 'word' }) {
   const [prompt, setPrompt] = useState('');
   const [scope, setScope] = useState<'document' | 'selection'>('document');
   const [mode, setMode] = useState<'agent' | 'ask'>('agent');
-  const live = true;
+  const [live, setLive] = useState(() => readLocal('liveEditing', true));
   const [theme, setTheme] = useState(() => readLocal('theme', 'light'));
   const [saveHistory, setSaveHistory] = useState(() => readLocal('saveHistory', true));
   const [consentFor, setConsentFor] = useState(() => readLocal('consentFor', ''));
@@ -352,6 +355,43 @@ export default function App({ host }: { host: 'browser' | 'word' }) {
     setAutoScroll(true);
     composerRef.current?.focus();
   }
+  function stageLocalPlan(plan: EditPlan, base: Snapshot) {
+    if (busyRef.current || actionBusy) return;
+    if (pendingCount) return report(new Error('请先应用或放弃待审阅的修改'));
+    if (base.documentId !== snapshot.documentId) return report(new Error('文档已切换，请重新预览'));
+    const change: Change = { id: uid(), plan, base, status: 'pending', created: Date.now() };
+    const message: Message = {
+      id: uid(),
+      role: 'assistant',
+      content: '本机工具生成的替换预览，尚未修改文档。',
+      change,
+      created: Date.now(),
+    };
+    const current = session?.documentId === base.documentId ? session : undefined;
+    const id = current?.id || uid();
+    setSessions((previous) =>
+      current
+        ? previous.map((item) =>
+            item.id === id
+              ? { ...item, updated: Date.now(), messages: [...item.messages, message] }
+              : item,
+          )
+        : [
+            {
+              id,
+              documentId: base.documentId,
+              title: plan.summary.slice(0, 30),
+              created: Date.now(),
+              updated: Date.now(),
+              messages: [message],
+            },
+            ...previous,
+          ],
+    );
+    setActiveId(id);
+    setPanel('changes');
+    setError('');
+  }
   async function applyChange(change: Change, automatic = false) {
     if (!adapter || (!automatic && busyRef.current)) return;
     if (!automatic) busyRef.current = true;
@@ -483,6 +523,14 @@ export default function App({ host }: { host: 'browser' | 'word' }) {
             patchMessage(sessionId, assistantId, (m) => ({
               ...m,
               content: m.content + event.text,
+            }));
+          if (event.type === 'tool')
+            patchMessage(sessionId, assistantId, (m) => ({
+              ...m,
+              tools: [
+                ...(m.tools ?? []).filter((tool) => tool.id !== event.activity.id),
+                event.activity,
+              ].slice(-5),
             }));
           if (event.type === 'proposal') {
             const change: Change = {
@@ -857,6 +905,27 @@ export default function App({ host }: { host: 'browser' | 'word' }) {
                           )}
                         </div>
                       )}
+                      {!!message.tools?.length && (
+                        <div className="tool-activity" aria-label="工具执行记录">
+                          {message.tools.map((tool) => (
+                            <div key={tool.id}>
+                              {tool.status === 'completed' ? (
+                                <Check size={12} />
+                              ) : (
+                                <Wrench size={12} />
+                              )}
+                              <span>{tool.label}</span>
+                              <small>
+                                {tool.status === 'completed'
+                                  ? '完成'
+                                  : busy && message.id === messages.at(-1)?.id
+                                    ? '处理中'
+                                    : '未完成'}
+                              </small>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {message.change && renderChange(message.change)}
                       {message.error && (
                         <div className="message-error">
@@ -957,10 +1026,19 @@ export default function App({ host }: { host: 'browser' | 'word' }) {
                         Ask
                       </button>
                     </div>
-                    <div className="live-setting live-fixed" aria-label="实时应用已启用">
-                      <span className="live-dot" />
-                      <span>实时应用</span>
-                    </div>
+                    <label className="live-setting">
+                      <input
+                        type="checkbox"
+                        aria-label="实时应用"
+                        checked={live}
+                        disabled={busy || actionBusy}
+                        onChange={(event) => {
+                          setLive(event.target.checked);
+                          writeLocal('liveEditing', event.target.checked);
+                        }}
+                      />
+                      <span>{live ? '实时应用' : '审阅后应用'}</span>
+                    </label>
                   </div>
                   <div className="composer-box">
                     <div className="composer-context">
@@ -1043,6 +1121,23 @@ export default function App({ host }: { host: 'browser' | 'word' }) {
                   )}
                 </form>
               </>
+            )}
+            {panel === 'tools' && (
+              <ToolsPanel
+                key={snapshot.documentId}
+                snapshot={snapshot}
+                busy={busy || actionBusy}
+                onRefresh={() => void refreshDocument()}
+                onFocus={(id) => {
+                  void adapter?.focus(id).catch(report);
+                }}
+                onStage={stageLocalPlan}
+                onRecipe={(recipe) => {
+                  setMode(recipe.mode);
+                  setPrompt(recipe.prompt);
+                  setPanel('chat');
+                }}
+              />
             )}
             {panel === 'outline' && (
               <div className="panel-scroll outline-panel">

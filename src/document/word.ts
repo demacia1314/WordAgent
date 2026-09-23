@@ -1,3 +1,4 @@
+import { wordLiteralSearch } from '../../shared/text-edits';
 import { validatePlan, type EditPlan, type Snapshot, type Paragraph } from '../../shared/contracts';
 import {
   CONFLICT,
@@ -106,13 +107,7 @@ export class WordAdapter implements DocumentAdapter {
         throw new Error('选区定位已失效，请重新选择文字并生成修改');
       const execute = async (context: Word.RequestContext): Promise<Checkpoint> => {
         const current = await this.read(context);
-        const sameParagraphState =
-          JSON.stringify(current.snapshot.paragraphs) === JSON.stringify(base.paragraphs) &&
-          current.snapshot.selection === base.selection;
-        if (
-          base.documentId !== this.documentId ||
-          (current.snapshot.revision !== base.revision && !sameParagraphState)
-        )
+        if (base.documentId !== this.documentId || current.snapshot.revision !== base.revision)
           throw new Error(CONFLICT);
         validatePlan(plan, base);
         const selection = selectionEdit ? this.capturedSelection! : current.selection;
@@ -120,6 +115,42 @@ export class WordAdapter implements DocumentAdapter {
           selection.load('text');
           await context.sync();
           if (selection.text !== base.selection) throw new Error('原始选区已改变，请重新生成修改');
+        }
+        // Preflight every literal range before queuing ANY write. One search sync,
+        // not one round trip per occurrence (Office correlated-objects pattern).
+        const replacements = plan.operations
+          .filter((op) => op.type === 'replace_text')
+          .map((op) => {
+            const paragraph = current.paragraphs.items[Number(op.paragraphId.slice(1))];
+            const ranges = paragraph.search(wordLiteralSearch(op.find), {
+              matchCase: true,
+              matchWholeWord: false,
+              matchWildcards: false,
+              matchPrefix: false,
+              matchSuffix: false,
+              ignorePunct: false,
+              ignoreSpace: false,
+            });
+            ranges.load('items/text');
+            return { op, ranges };
+          });
+        const replacementRanges = new Map<string, Word.Range[]>();
+        if (replacements.length) {
+          const checkedXml = context.document.body.getOoxml();
+          await context.sync();
+          if (fingerprint(checkedXml.value) !== current.snapshot.revision)
+            throw new Error(CONFLICT);
+          for (const { op, ranges } of replacements) {
+            if (
+              ranges.items.length !== op.expectedMatches ||
+              ranges.items.some((range) => range.text !== op.find)
+            )
+              throw new Error('Word 匹配结果与原文不一致，未应用本批修改，请重新查找');
+            replacementRanges.set(
+              op.paragraphId,
+              op.occurrence === undefined ? ranges.items : [ranges.items[op.occurrence - 1]],
+            );
+          }
         }
         // Resolve all targets against the same snapshot and edit from bottom to top.
         const sorted = [...plan.operations].sort(
@@ -133,6 +164,10 @@ export class WordAdapter implements DocumentAdapter {
             continue;
           }
           const p = current.paragraphs.items[Number(op.paragraphId.slice(1))];
+          if (op.type === 'replace_text') {
+            for (const range of [...replacementRanges.get(op.paragraphId)!].reverse())
+              range.insertText(op.text, 'Replace');
+          }
           if (op.type === 'replace')
             p.getRange('Content').insertText(op.text.replace(/\n/g, '\r'), 'Replace');
           if (op.type === 'delete') {
@@ -156,8 +191,8 @@ export class WordAdapter implements DocumentAdapter {
             if (op.style) p.styleBuiltIn = op.style;
             if (op.bold !== undefined) p.font.bold = op.bold;
             if (op.italic !== undefined) p.font.italic = op.italic;
-          if (op.fontSize) p.font.size = op.fontSize;
-          if (op.fontFamily) p.font.name = op.fontFamily;
+            if (op.fontSize) p.font.size = op.fontSize;
+            if (op.fontFamily) p.font.name = op.fontFamily;
             if (op.alignment) p.alignment = alignment[op.alignment];
           }
         }

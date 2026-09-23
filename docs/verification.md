@@ -1,5 +1,24 @@
 # Verification
 
+## User-centered document tools — 2026-09-23
+
+Work performed on `feat/user-centered-document-tools`, based on `9a4376e`, in the isolated `G:\test\WordAgent` checkout.
+
+- Baseline before changes: 52 tests across 6 files passed.
+- Updated suite: `npm test -- --maxWorkers=2` passed 101 tests across 8 files, adding 49 regression checks.
+- `npm run build` passed TypeScript checking, Vite production bundling and tsup backend bundling.
+- Changed code and documentation were formatted with the installed Prettier. No dependency or lockfile changes were needed.
+- Coverage includes paginated literal search, scoped/count-checked replacement plans, protected targets, exact occurrence replacement and rollback in real ProseMirror, preserved surrounding marks/links, merged font attributes, strict rich-text/OOXML revision conflicts, mocked Word range preflight, bounded multi-turn tool calls, cancellation, malformed calls, selection scope, and cumulative SSE frame limits.
+- React/jsdom checks exercise local search, preview staging, paragraph navigation, recipe selection, disabled controls, protected-match errors and complete change-card diffs. They assert local actions do not call `fetch`; they are not screenshot or native WebView2 acceptance.
+- Model settings now have a separate Agent capability probe. Automated API tests verify the normal test sends no tools, the Agent probe sends no document context, forces the no-op probe function, recognizes a valid tool call, and redacts upstream error bodies.
+- No paid model endpoint, personal settings, certificate trust, Word sideload or service restart was used for feature validation. Release publication uses separate transient credentials and does not store them in the repository. Node emitted environment proxy-agent experimental warnings; these were not test/build failures.
+
+Native Word search semantics, formatting inheritance, mixed-format matches, protected documents and collaborative changes still need validation in a disposable real Word document. Strict OOXML guards can conservatively reject nonsemantic host changes; they are deliberately not bypassed by equal paragraph text. The toolbox does not add web search or factual/citation verification.
+
+## Historical verification record
+
+The sections below are retained from the original repository. They describe earlier acceptance work, not checks repeated for the document-tools change.
+
 This record separates automated checks, browser acceptance, and native Word checks. A local deterministic provider was used only for acceptance testing; it is not an AI model.
 
 ## Automated Checks
