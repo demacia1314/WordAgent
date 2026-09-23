@@ -1,0 +1,48 @@
+name: Publish npm
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: contains(github.event.head_commit.message, '[publish npm]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Use current npm CLI
+        run: npm install --global npm@latest
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Test
+        run: npm test -- --maxWorkers=2
+      - name: Check registry
+        id: package
+        shell: bash
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish
+        if: steps.package.outputs.publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.NODE_AUTH_TOKEN || secrets.NPM_PUBLISH_TOKEN }}
+        shell: bash
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            printf '%s\n' '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' > "$RUNNER_TEMP/wordagent.npmrc"
+            export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/wordagent.npmrc"
+          fi
+          npm publish --access public --provenance
