@@ -3,6 +3,10 @@
   "version": "2.2.0",
   "description": "Local AI editing sidebar for Microsoft Word with live document updates.",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/demacia1314/WordAgent.git"
+  },
   "bin": {
     "wordagent": "bin/wordagent.mjs"
   },
